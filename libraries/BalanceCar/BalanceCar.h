@@ -31,10 +31,10 @@ public:
 	int stopr = 0;
 	double angleoutput=0,pwm1 = 0, pwm2 = 0;
 private:
-	float speeds_filterold;//速度滤波
-	float positions;//位置
-	int turnmax = 0;                                    //旋转输出幅值
-	int turnmin = 0;                                  //旋转输出幅值
+	float speeds_filterold;//Velocity Filtering
+	float positions;//Position
+	int turnmax = 0;                                    //Rotation Output Amplitude
+	int turnmin = 0;                                  //Rotation Output Amplitude
 	float turnout = 0;
 	int flag1 = 0;
 	int flag2 = 0;

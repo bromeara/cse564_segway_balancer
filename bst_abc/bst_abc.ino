@@ -52,7 +52,7 @@ float value;
 float Q;
 float Angle_ax; //The tilt Angle calculated by acceleration
 float Angle_ay;
-float K1 = 0.05; 
+float K1 = 0.05; // Calculated by tc/(tc+dt) where tc is how fast you want readings to respond and dt=1/sampling frequency 
 float angle0 = 0.00; //Mechanical equilibrium Angle
 int slong;
 //********************angle data*********************//

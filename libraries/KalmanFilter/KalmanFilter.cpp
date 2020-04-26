@@ -20,9 +20,9 @@ void KalmanFilter::Yiorderfilter(float angle_m, float gyro_m,float dt,float K1)
 
 void KalmanFilter::Kalman_Filter(double angle_m, double gyro_m,float dt,float Q_angle,float Q_gyro,float R_angle,float C_0)
 {
-  angle += (gyro_m - q_bias) * dt;
-  angle_err = angle_m - angle;
-  Pdot[0] = Q_angle - P[0][1] - P[1][0];
+  angle += (gyro_m - q_bias) * dt; //equation 5
+  angle_err = angle_m - angle; //setup for angle portion of equation 5
+  Pdot[0] = Q_angle - P[0][1] - P[1][0]; // The following 8 lines update the probabilities
   Pdot[1] = - P[1][1];
   Pdot[2] = - P[1][1];
   Pdot[3] = Q_gyro;
@@ -30,14 +30,14 @@ void KalmanFilter::Kalman_Filter(double angle_m, double gyro_m,float dt,float Q_
   P[0][1] += Pdot[1] * dt;
   P[1][0] += Pdot[2] * dt;
   P[1][1] += Pdot[3] * dt;
-  PCt_0 = C_0 * P[0][0];
+  PCt_0 = C_0 * P[0][0]; //H is just an identity matrix so just use the variance
   PCt_1 = C_0 * P[1][0];
-  E = R_angle + C_0 * PCt_0;
-  K_0 = PCt_0 / E;
+  E = R_angle + C_0 * PCt_0; // The inverse term of equation 7
+  K_0 = PCt_0 / E; // equation 7
   K_1 = PCt_1 / E;
   t_0 = PCt_0;
   t_1 = C_0 * P[0][1];
-  P[0][0] -= K_0 * t_0;
+  P[0][0] -= K_0 * t_0; //Update the probability
   P[0][1] -= K_0 * t_1;
   P[1][0] -= K_1 * t_0;
   P[1][1] -= K_1 * t_1;
