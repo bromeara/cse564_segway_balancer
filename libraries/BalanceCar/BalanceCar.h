@@ -20,10 +20,10 @@ In order to  avoid Infringement Act,this core is not for the commerce except bei
 class BalanceCar
 {
 public:
-  double speedpiout(double kps,double kis,double kds,int f,int b,double p0);
-  float turnspin(int turnleftflag,int turnrightflag,int spinleftflag,int spinrightflag,double kpturn,double kdturn,float Gyroz);
+  double speedpiout(double kps,double kis,double kds,int const f,int const b,double const p0);
+  float turnspin(bool turnleftflag,bool turnrightflag,bool spinleftflag,bool spinrightflag,double kpturn,double kdturn,float Gyroz);
   void pwma(double speedoutput,float rotationoutput,float angle,float angle6,int turnleftflag,int turnrightflag,int spinleftflag,int spinrightflag,
-						int f,int b,float accelz,int Pin1,int Pin2,int Pin3,int Pin4,int PinPWMA,int PinPWMB);
+						int const front,int back,float accelz,int Pin1,int Pin2,int Pin3,int Pin4,int PinPWMA,int PinPWMB);
 	int pulseright = 0;
 	int pulseleft = 0;
 	int posture=0;

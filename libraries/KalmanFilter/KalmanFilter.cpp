@@ -8,7 +8,7 @@ In order to  avoid Infringement Act,this core is not for the commerce except bei
 #include "KalmanFilter.h"
 
 //////////////////////////yijielvbo////////////////////
-void KalmanFilter::Yiorderfilter(float angle_m, float gyro_m,float dt,float K1)
+void KalmanFilter::Yiorderfilter(float angle_m, float gyro_m,float dt,float const K1)
 {
   //This is a complementary filter
   angle6 = K1 * angle_m + (1 - K1) * (angle6 + gyro_m * dt);
@@ -18,7 +18,7 @@ void KalmanFilter::Yiorderfilter(float angle_m, float gyro_m,float dt,float K1)
 
 ////////////////////////kalman/////////////////////////
 
-void KalmanFilter::Kalman_Filter(double angle_m, double gyro_m,float dt,float Q_angle,float Q_gyro,float R_angle,float C_0)
+void KalmanFilter::Kalman_Filter(double angle_m, double gyro_m,float dt,float const Q_angle,float const Q_gyro,float const R_angle,float const C_0)
 {
   angle += (gyro_m - q_bias) * dt; //equation 5
   angle_err = angle_m - angle; //setup for angle portion of equation 5
@@ -50,8 +50,8 @@ void KalmanFilter::Kalman_Filter(double angle_m, double gyro_m,float dt,float Q_
 
 
 ///////////////////////////// Angle test/////////////////////////////////
-void KalmanFilter::Angletest(int16_t ax,int16_t ay,int16_t az,int16_t gx,int16_t gy,int16_t gz,float dt,float Q_angle,float Q_gyro,
-									float R_angle,float C_0,float K1)
+void KalmanFilter::Angletest(int16_t ax,int16_t ay,int16_t az,int16_t gx,int16_t gy,int16_t gz,float dt,float const Q_angle,float const Q_gyro,
+									float const R_angle,float const C_0,float const K1)
 {
   float Angle = atan2(ay , az) * 180 / PI; // Angle measured between current position and upright.
   Gyro_x = (gx - 128.1) / 131;              //Rotation around the x axis. (Offset for maybe an error rate or margin of some kind?)
