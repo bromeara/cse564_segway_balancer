@@ -7,39 +7,17 @@ In order to  avoid Infringement Act,this core is not for the commerce except bei
 
 #include "BalanceCar.h"
 
-//PID controller
-double BalanceCar::speedpiout(double kps,double kis,double kds,int const f,int const b,double const p0)
-{
-  float speeds = (pulseleft + pulseright) * 1.0;
-  pulseright = pulseleft = 0;
-  speeds_filterold *= 0.7;
-  float speeds_filter = speeds_filterold + speeds * 0.3;
-  speeds_filterold = speeds_filter;
-  positions += speeds_filter;
-  positions += f;
-  positions += b;
-  positions = constrain(positions, -3550,3550);
-  double output = kis * (p0 - positions) + kps * (p0 - speeds_filter);
-  if(flag1==1)
-  {
-  positions=0;
-  }
-  
-  return output;
-}
-
-float BalanceCar::turnspin(bool turnleftflag,bool turnrightflag,bool spinleftflag,bool spinrightflag,double kpturn,double kdturn,float Gyroz)
+float BalanceCar::turnspin(bool turnleftflag,bool turnrightflag,bool spinleftflag,bool spinrightflag, int speeds)
 {
   int spinonce = 0;
   float turnspeed = 0;
 	float rotationratio = 0;
-   float turnout_put = 0;
 	
   if (turnleftflag || turnrightflag || spinleftflag || spinrightflag)
   {
     if (spinonce == 0)
     {
-      turnspeed = ( pulseright + pulseleft);
+      turnspeed = float(speeds);
 	  spinonce++;
     }
 
@@ -80,12 +58,11 @@ float BalanceCar::turnspin(bool turnleftflag,bool turnrightflag,bool spinleftfla
   if (turnout > turnmax) turnout = turnmax;
   if (turnout < turnmin) turnout = turnmin;
 
-  turnout_put = -turnout * kpturn - Gyroz * kdturn;
-	return turnout_put;
+	return turnout;
 }
 
-void BalanceCar::pwma(double speedoutput,float rotationoutput,float angle,float angle6,int turnleftflag,int turnrightflag,int spinleftflag,int spinrightflag,
-	int const front,int const back,float accelz,int Pin1,int Pin2,int Pin3,int Pin4,int PinPWMA,int PinPWMB)
+void BalanceCar::pwma(double speedoutput,float rotationoutput,float angle,float angle6,bool const turnleftflag, bool const turnrightflag, bool const spinleftflag, bool const spinrightflag,
+	int const direction,float accelz,int Pin1,int Pin2,int Pin3,int Pin4,int PinPWMA,int PinPWMB)
 {
 
   pwm1 = -angleoutput - speedoutput - rotationoutput; //Left PWM
@@ -102,7 +79,7 @@ void BalanceCar::pwma(double speedoutput,float rotationoutput,float angle,float 
     pwm2 = 0;
   }
 
-		  if (angle6 > 10 || angle6 < -10 &turnleftflag == 0 & turnrightflag == 0 & spinleftflag == 0 & spinrightflag == 0 && front == 0 && back == 0)
+		  if (angle6 > 10 || angle6 < -10 && !turnleftflag && !turnrightflag && !spinleftflag && !spinrightflag && direction == 0)
   {
            if(stopl + stopr > 1500||stopl + stopr < -3500)
    {

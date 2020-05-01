@@ -8,17 +8,14 @@
 #include <PinChangeInt.h>
 // Speed PID control by speed dial counting
 #include <BalanceCar.h>
-#include <KalmanFilter.h>
+#include <Filters.h>
+#include <PIDControl.h>
 // I2Cdev, MPU6050, and PID_v1 libraries need to be installed in libraries
 // folder in the Arduino installation path.
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 #include "Wire.h"
 
-MPU6050 mpu;  // Instantiate an MPU6050 object with the object is called mpu
-BalanceCar balancecar;
-KalmanFilter kalmanfilter;
-int16_t ax, ay, az, gx, gy, gz;
 // TB6612FNG drive module control signal
 #define IN1M 7
 #define IN2M 6
@@ -31,30 +28,17 @@ int16_t ax, ay, az, gx, gy, gz;
 #define PinA_left 2   // Interrupt 0
 #define PinA_right 4  // Interrupt 1
 
-// Declaring custom variables
-// int num;
-// double Setpoint;                               //Angle DIP set point, input,
-// output double Setpoints,
-double Outputs = 0;  // Speed DIP set point, input, output
-double kp = 38, ki = 0.0,
-       kd = 0.58;  // PID Gains for angle out you can modify these parameters
-double kp_speed = 3.5, ki_speed = 0.1058,
-       kd_speed =
-           0.0;  // PID gains for speedpiout These parameters need you to modify
-double kp_turn = 28, ki_turn = 0,
-       kd_turn = 0.29;  // Rotate PID settings into turn spin
-const double PID_Original[6] = {
-    38, 0.0, 0.58, 3.5, 0.1058, 0.0};  // Restoring default PID parameters
-// PID Parameters of turn
-double vert_angle_setpoint = 0;  // dpwm = 0, dl = 0; //Angular equilibrium
-                                 // point, PWM gap, dead zone, PWM1, PWM2
-// float value;
+MPU6050 mpu;  // Instantiate an MPU6050 object with the object is called mpu
+BalanceCar balancecar;
+Filters filters;
+int16_t ax, ay, az, gx, gy, gz;
+PIDController pid = {PIDGain{38, 0, 0.58}, PIDGain{28, 0, 0.29}, PIDGain{0, 0.1058, 3.5}};
 
 //********************angle data*********************//
 // float Q;
 // float Angle_ax; //The tilt Angle calculated by acceleration
 // float Angle_ay;
-
+// Was K1
 // float angle0 = 0.00; //Mechanical equilibrium Angle
 // int slong;
 //********************angle data*********************//
@@ -65,35 +49,14 @@ float R_angle = 0.5, C_0 = 1;
 constexpr float timeChange =
     5;  // Filter sampling time interval (unit:milliseconds)
 constexpr float dt =
-    timeChange * 0.001;  // Note:The value of dt is the filter sampling time
+    timeChange * 0.001;  // The value of dt is the filter sampling time
 constexpr float K1 =
     timeChange /
     (timeChange + dt);  // Calculated by tc/(tc+dt) where tc is how fast you
                         // want readings to respond and dt=1/sampling frequency
 //***************Kalman_Filter*********************//
 
-//*********************************************
-//******************** speed count ************
-//*********************************************
-//Pulse interrupt counter registers
-volatile long count_right_pulse = 0; 
-volatile long count_left_pulse = 0;
-int speedcc = 0; //Waits 8 5ms interrupts and then triggers speedpiout()
-
-//////////////////////Pulse calculation/////////////////////////
-//int lz = 0; 
-//int rz = 0;
-//int rpluse = 0;
-//int lpluse = 0;
-//int sumam;
-/////////////////////Pulse calculation////////////////////////////
-
-//////////////Steering and rotation parameters///////////////////////////////
-int turncount = 0; //Waits 4 5ms interrupts and then triggers speedpiout()
-float turnoutput = 0;
-//////////////Steering and rotation parameters///////////////////////////////
-
-//////////////Wifi control volume///////////////////
+//////////////User Input States///////////////////
 enum class CarStateChar{
   STOP = '0',
   RUN = '1',
@@ -102,7 +65,7 @@ enum class CarStateChar{
   TURN_RIGHT = '4'
 };
 
-/*The car status enumeration*/
+/////////////Actual Car States///////////////////
 enum class CarState {
   STOP = 0,
   RUN,
@@ -112,116 +75,206 @@ enum class CarState {
   SPIN_LEFT,
   SPIN_RIGHT
 };
+
 CarState car_state = CarState::STOP;  //  1run 2back 3left 4right 0stop
 
-// Parser Variables
-int incomingByte = 0; //Serial port recieving byte
-String inputString = "";  // It used to store received content
-boolean newLineReceived = false;
-boolean startBit = false;
-
-String returntemp = "";               // It used to store return value
-boolean g_autoup = false;
-int g_uptimes = 5000;
-
-int front = 0; //more or less a flag that toggles between 0 and 250
-int back = 0; // more or less a flag that toggles between 0 and -250
+int direction = 0;
 bool turn_left_flag = false;
 bool turn_right_flag = false;
 bool spin_left_flag = false;
 bool spin_right_flag = false;
-//int bluetoothvalue;
-//////////////bluetoothvalue///////////////////
 
-//////////////////Ultrasonic velocity//////////////////
 
-//int chaoshengbo = 0;
-//int tingzhi = 0;
-//int jishi = 0;
+int emergency_stop = 0;
+int speeds = 0;
 
-//////////////////Ultrasonic velocity//////////////////
+//Pulse interrupt counter registers
+volatile long count_right_pulse = 0; 
+volatile long count_left_pulse = 0;
 
 //////////////////////Pulse calculation///////////////////////
 void countpulse() {
-  //lz = count_left;
-  //rz = count_right;
 
-  int left_pulse = count_left_pulse;
-  int right_pulse = count_right_pulse;
+  static int left_pulse = count_left_pulse;
+  static int right_pulse = count_right_pulse;
 
   count_left_pulse = 0;
   count_right_pulse = 0;
-/*
-  if ((balancecar.pwm1 < 0) && (balancecar.pwm2 < 0)) {
-    rpluse = -rpluse;
-    lpluse = -lpluse;
-  } else if ((balancecar.pwm1 > 0) && (balancecar.pwm2 > 0)) {
-    rpluse = rpluse;
-    lpluse = lpluse;
-  } else if ((balancecar.pwm1 < 0) && (balancecar.pwm2 > 0)) {
-    rpluse = rpluse;
-    lpluse = -lpluse;
-  } else if ((balancecar.pwm1 > 0) && (balancecar.pwm2 < 0)) {
-    rpluse = -rpluse;
-    lpluse = lpluse;
-  }*/
 
   right_pulse = (balancecar.pwm2 < 0) ? -right_pulse : right_pulse;
   left_pulse = (balancecar.pwm1 < 0) ? -left_pulse : left_pulse;
 
-  balancecar.stopr += right_pulse;
-  balancecar.stopl += left_pulse;
+  //Long living speed limiter
+  emergency_stop += (right_pulse + left_pulse);
 
-  // When the interrupt is entered every 5ms, the pulse number is superimposed.
-  balancecar.pulseright += right_pulse;
-  balancecar.pulseleft += left_pulse;
-  //sumam = balancecar.pulseright + balancecar.pulseleft;
+  // Short lived speed estimator
+  speeds += (right_pulse + left_pulse);
 }
-////////////////////Pulse calculation///////////////////////
 
-//////////////////////////////////////
-void angleout() {
-  balancecar.angleoutput = kp * (kalmanfilter.angle + vert_angle_setpoint) +
-                           kd * kalmanfilter.Gyro_x;
+double speed_filtered = 0;
+double speed_output = 0;
+void slow_inter() {
+  cli();
+  speed_filtered = band_limited_filter<double>(speed_filtered, speeds, pid.z.get_add_gain());
+  speed_output = - pid.z.update_pid(speed_filtered + direction, speeds);
+  speeds = 0;
+  sei();
 }
-//////////////////////////////////////
+
+//////////////Steering and rotation parameters///////////////////////////////
+float turn_error = 0;
+float turn_output = 0;
+
+void avg_inter() {
+  turn_error = balancecar.turnspin(turn_left_flag, turn_right_flag, spin_left_flag, spin_right_flag, speeds);
+  turn_output = pid.y.update_pid_bypass(turn_error, raw_to_gyro(gz));
+}
 
 //////////////////////////////////////////////////////////
 //////////////////Interrupt timing 5ms////////////////////
 /////////////////////////////////////////////////////////
-void inter() {
+void fast_inter() {
   sei();
   countpulse();
   mpu.getMotion6(&ax, &ay, &az, &gx, &gy,
                  &gz);  // IIC obtained MPU6050 six-axis data: ax ay az gx gy gz
-  kalmanfilter.Angletest(ax, ay, az, gx, gy, gz, dt, Q_angle, Q_gyro, R_angle,
+  filters.angle_test(ax, ay, az, gx, gy, gz, dt, Q_angle, Q_gyro, R_angle,
                          C_0, K1);  // Getting Angle  and kaman filtering
-  angleout();
+  balancecar.angleoutput = pid.x.update_pid_bypass(-filters.angle, -raw_to_gyro(gx)); // Signs may be weird for gx
 
-  speedcc++;
-  if (speedcc >= 8)  // 40ms access speed loop control
-  {
-    Outputs = balancecar.speedpiout(kp_speed, ki_speed, kd_speed, front, back,
-                                    vert_angle_setpoint);
-    speedcc = 0;
-  }
-  turncount++;
-  if (turncount > 4)  // 20ms access the rotation control
-  {
-    turnoutput = balancecar.turnspin(
-        turn_left_flag, turn_right_flag, spin_left_flag, spin_right_flag,
-        kp_turn, kd_turn, kalmanfilter.Gyro_z);  // Rotator function
-    turncount = 0;
-  }
   balancecar.posture++;
-  balancecar.pwma(Outputs, turnoutput, kalmanfilter.angle, kalmanfilter.angle6,
+  balancecar.pwma(speed_output, turn_output, filters.angle, filters.angle6,
                   turn_left_flag, turn_right_flag, spin_left_flag,
-                  spin_right_flag, front, back, kalmanfilter.accelz, IN1M, IN2M,
+                  spin_right_flag, direction, raw_to_accel(az), IN1M, IN2M,
                   IN3M, IN4M, PWMA, PWMB);
 }
-//////////////////////////////////////////////////////////
-//////////////////Interrupt timing 5ms///////////////////
-/////////////////////////////////////////////////////////
+
+
+
+// ===  initial setting    ===
+void setup() {
+  // TB6612FNGN drive module control signal initialization
+  pinMode(IN1M, OUTPUT);  // Controlling the direction of motor 1, 01 is
+                          // positive, 10 is reverse
+  pinMode(IN2M, OUTPUT);
+  pinMode(IN3M, OUTPUT);  // Controlling the direction of motor 2, 01 is
+                          // positive, 10 is reverse
+  pinMode(IN4M, OUTPUT);
+  pinMode(PWMA, OUTPUT);  // Left motor PWM
+  pinMode(PWMB, OUTPUT);  // Right motor PWM
+  pinMode(STBY, OUTPUT);  // TB6612FNG
+
+  // TB6612FNG drive module control signals
+  digitalWrite(IN1M, 0);  //
+  digitalWrite(IN2M, 1);
+  digitalWrite(IN3M, 1);
+  digitalWrite(IN4M, 0);
+  digitalWrite(STBY, 1);
+  analogWrite(PWMA, 0);
+  analogWrite(PWMB, 0);
+
+  pinMode(PinA_left, INPUT);
+  pinMode(PinA_right, INPUT);
+
+  // I2C
+  Wire.begin();  // Adding the I2C bus sequence
+  Serial.begin(
+      9600);  // Opening the serial port and setting the baud rate to 115200
+  delay(1500);
+  mpu.initialize();  // Initialization of MPU6050
+  delay(2);
+  pid.z.set_i_limits(3550);
+  pid.z.set_add_gain(0.7);
+  balancecar.pwm1 = 0;
+  balancecar.pwm2 = 0;
+  MsTimer2::set(5, fast_inter);
+  MsTimer2::set(20, avg_inter);
+  MsTimer2::set(40, slow_inter);
+  MsTimer2::start();
+}
+
+////////////////////////////////////////turn//////////////////////////////////
+
+void ResetPID() {
+  pid.x.reset_pid();
+  pid.y.reset_pid();
+  pid.z.reset_pid();
+}
+void ResetCarState() {
+  turn_left_flag = false;
+  turn_right_flag = false;
+  direction = 0;
+  spin_left_flag = false;
+  spin_right_flag = false;
+  turn_output = 0;
+}
+// ===       Main loop       ===
+void loop() {
+  //String returnstr = "$0,0,0,0,0,0,0,0,0,0,0,0cm,8.2V#";
+  attachInterrupt(0, Code_left, CHANGE);
+  attachPinChangeInterrupt(PinA_right, Code_right, CHANGE);
+
+  // Serial.println(kalmanfilter.angle);
+  // Serial.print("\t");
+  // Serial.print(bluetoothvalue);
+  // Serial.print("\t");
+  //      Serial.print( balancecar.angleoutput);
+  //      Serial.print("\t");
+  //      Serial.print(balancecar.pwm1);
+  //      Serial.print("\t");
+  //      Serial.println(balancecar.pwm2);
+  //      Serial.print("\t");
+  //      Serial.println(balancecar.stopr);
+  //      Serial.print("\t");
+
+  run_parser();
+
+  switch (car_state) {
+    case CarState::STOP:
+      ResetCarState();
+      break;
+    case CarState::RUN:
+      ResetCarState();
+      direction = 250;
+      break;
+    case CarState::TURN_LEFT:
+      turn_left_flag = true;
+      break;
+    case CarState::TURN_RIGHT:
+      turn_right_flag = true;
+      break;
+    case CarState::BACK:
+      ResetCarState();
+      direction = -250;
+      break;
+    case CarState::SPIN_LEFT:
+      spin_left_flag = true;
+      break;
+    case CarState::SPIN_RIGHT:
+      spin_right_flag = true;
+      break;
+    default:
+      ResetCarState();
+      break;
+  }
+
+  SendAutoUp();
+}
+
+////////////////////////////////////////pwm///////////////////////////////////
+
+//////////////////////////Pulse interrupt Calculation/////////////////////////
+
+void Code_left() { count_left_pulse++; }
+
+void Code_right() { count_right_pulse++; }
+
+
+////////////////////////Parsing and wireless connectivity/////////////////////
+String returntemp = "";               // It used to store return value
+boolean g_autoup = false;
+int g_uptimes = 5000;
+
 void SendAutoUp() {
   g_uptimes--;
   if ((g_autoup == true) && (g_uptimes == 0)) {
@@ -279,142 +332,23 @@ void SendAutoUp() {
   if (g_uptimes == 0) g_uptimes = 5000;
 }
 
-// ===  initial setting    ===
-void setup() {
-  // TB6612FNGN drive module control signal initialization
-  pinMode(IN1M, OUTPUT);  // Controlling the direction of motor 1, 01 is
-                          // positive, 10 is reverse
-  pinMode(IN2M, OUTPUT);
-  pinMode(IN3M, OUTPUT);  // Controlling the direction of motor 2, 01 is
-                          // positive, 10 is reverse
-  pinMode(IN4M, OUTPUT);
-  pinMode(PWMA, OUTPUT);  // Left motor PWM
-  pinMode(PWMB, OUTPUT);  // Right motor PWM
-  pinMode(STBY, OUTPUT);  // TB6612FNG
-
-  // TB6612FNG drive module control signals
-  digitalWrite(IN1M, 0);  //
-  digitalWrite(IN2M, 1);
-  digitalWrite(IN3M, 1);
-  digitalWrite(IN4M, 0);
-  digitalWrite(STBY, 1);
-  analogWrite(PWMA, 0);
-  analogWrite(PWMB, 0);
-
-  pinMode(PinA_left, INPUT);
-  pinMode(PinA_right, INPUT);
-
-  // I2C
-  Wire.begin();  // Adding the I2C bus sequence
-  Serial.begin(
-      9600);  // Opening the serial port and setting the baud rate to 115200
-  delay(1500);
-  mpu.initialize();  // Initialization of MPU6050
-  delay(2);
-  balancecar.pwm1 = 0;
-  balancecar.pwm2 = 0;
-  MsTimer2::set(5, inter);
-  MsTimer2::start();
-}
-
-////////////////////////////////////////turn//////////////////////////////////
-
-void ResetPID() {
-  kp = PID_Original[0];
-  ki = PID_Original[1];
-  kd = PID_Original[2];  // The parameters you need to modify
-  kp_speed = PID_Original[3];
-  ki_speed = PID_Original[4];
-  kd_speed = PID_Original[5];  // The parameters you need to modify
-}
-void ResetCarState() {
-  turn_left_flag = 0;
-  turn_right_flag = 0;
-  front = 0;
-  back = 0;
-  spin_left_flag = 0;
-  spin_right_flag = 0;
-  turnoutput = 0;
-}
-// ===       Main loop       ===
-void loop() {
-  //String returnstr = "$0,0,0,0,0,0,0,0,0,0,0,0cm,8.2V#";
-  attachInterrupt(0, Code_left, CHANGE);
-  attachPinChangeInterrupt(PinA_right, Code_right, CHANGE);
-
-  // kongzhi();
-  //
-
-  // Serial.println(kalmanfilter.angle);
-  // Serial.print("\t");
-  // Serial.print(bluetoothvalue);
-  // Serial.print("\t");
-  //      Serial.print( balancecar.angleoutput);
-  //      Serial.print("\t");
-  //      Serial.print(balancecar.pwm1);
-  //      Serial.print("\t");
-  //      Serial.println(balancecar.pwm2);
-  //      Serial.print("\t");
-  //      Serial.println(balancecar.stopr);
-  //      Serial.print("\t");
-
-  run_parser();
-
-  switch (car_state) {
-    case CarState::STOP:
-      ResetCarState();
-      break;
-    case CarState::RUN:
-      ResetCarState();
-      front = 250;
-      break;
-    case CarState::TURN_LEFT:
-      turn_left_flag = true;
-      break;
-    case CarState::TURN_RIGHT:
-      turn_right_flag = true;
-      break;
-    case CarState::BACK:
-      ResetCarState();
-      back = -250;
-      break;
-    case CarState::SPIN_LEFT:
-      spin_left_flag = true;
-      break;
-    case CarState::SPIN_RIGHT:
-      spin_right_flag = true;
-      break;
-    default:
-      ResetCarState();
-      break;
-  }
-
-  SendAutoUp();
-}
-
-////////////////////////////////////////pwm///////////////////////////////////
-
-//////////////////////////Pulse interrupt
-///calculation/////////////////////////////////////
-
-void Code_left() { count_left_pulse++; }
-
-void Code_right() { count_right_pulse++; }
-
-//////////////////////////Pulse interrupt
-///calculation/////////////////////////////////////
+// Parser Variables
+int incomingByte = 0; //Serial port recieving byte
+String inputString = "";  // It used to store received content
+boolean newLineReceived = false;
+boolean startBit = false;
 
 // SerialEvent () is a new feature in IDE1.0 and later version.
-int num1 = 0;
+int num = 0;
 void serialEvent() {
   while (Serial.available()) {
     incomingByte = Serial.read();
     if (incomingByte == '$') {
-      num1 = 0;
+      num = 0;
       startBit = true;
     }
     if (startBit == true) {
-      num1++;
+      num++;
       inputString += (char)incomingByte;
     }
     if (startBit == true && incomingByte == '#') {
@@ -422,14 +356,15 @@ void serialEvent() {
       startBit = false;
     }
 
-    if (num1 >= 80) {
-      num1 = 0;
+    if (num >= 80) {
+      num = 0;
       startBit = false;
       newLineReceived = false;
       inputString = "";
     }
   }
 }
+
 
 void run_parser(){  if (newLineReceived) {
     switch (inputString[1]) {
@@ -473,10 +408,10 @@ void run_parser(){  if (newLineReceived) {
     {
       char charkp[7], charkd[7], charkpspeed[7], charkispeed[7];
 
-      dtostrf(kp, 3, 2, charkp);             // == %3.2f
-      dtostrf(kd, 3, 2, charkd);             // == %3.2f
-      dtostrf(kp_speed, 3, 2, charkpspeed);  // == %3.2f
-      dtostrf(ki_speed, 3, 2, charkispeed);  // == %3.2f
+      dtostrf(pid.x.get_kp(), 3, 2, charkp);             // == %3.2f
+      dtostrf(pid.y.get_kd(), 3, 2, charkd);             // == %3.2f
+      dtostrf(pid.z.get_kp(), 3, 2, charkpspeed);  // == %3.2f
+      dtostrf(pid.z.get_ki(), 3, 2, charkispeed);  // == %3.2f
 
       String strkp = charkp;
       String strkd = charkd;
@@ -507,7 +442,7 @@ void run_parser(){  if (newLineReceived) {
         String m_skp = inputString.substring(i + 2, ii);
         m_skp.replace(".", "");
         int m_kp = m_skp.toInt();
-        kp = (double)((double)m_kp / 100.0f);
+        pid.x.set_kp((double)((double)m_kp / 100.0f));
       }
 
       i = inputString.indexOf("AD");
@@ -517,7 +452,7 @@ void run_parser(){  if (newLineReceived) {
         String m_skd = inputString.substring(i + 2, ii);
         m_skd.replace(".", "");
         int m_kd = m_skd.toInt();
-        kd = (double)((double)m_kd / 100.0f);
+        pid.x.set_kd((double)((double)m_kd / 100.0f));
       }
       Serial.print("$OK#");
     }
@@ -529,7 +464,7 @@ void run_parser(){  if (newLineReceived) {
         String m_svp = inputString.substring(i + 2, ii);
         m_svp.replace(".", "");
         int m_vp = m_svp.toInt();
-        kp_speed = (double)((double)m_vp / 100.0f);
+        pid.z.set_kd((double)((double)m_vp / 100.0f));
       }
 
       i = inputString.indexOf("VI");
@@ -538,7 +473,7 @@ void run_parser(){  if (newLineReceived) {
         String m_svi = inputString.substring(i + 2, ii);
         m_svi.replace(".", "");
         int m_vi = m_svi.toInt();
-        ki_speed = (double)((double)m_vi / 100.0f);
+        pid.z.set_ki((double)((double)m_vi / 100.0f));
         Serial.print("$OK#");
       }
     }
