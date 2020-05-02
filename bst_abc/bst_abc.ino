@@ -47,7 +47,7 @@ PIDController pid = {PIDGain{38, 0, 0.58}, PIDGain{28, 0, 0.29}, PIDGain{0, 0.10
 float Q_angle = 0.001, Q_gyro = 0.005;  // Used in angle test
 float R_angle = 0.5, C_0 = 1;
 constexpr float timeChange =
-    5;  // Filter sampling time interval (unit:milliseconds)
+    0.005;  // Filter sampling time interval (unit:milliseconds)
 constexpr float dt =
     timeChange * 0.001;  // The value of dt is the filter sampling time
 constexpr float K1 =
@@ -270,6 +270,7 @@ void Code_left() { count_left_pulse++; }
 void Code_right() { count_right_pulse++; }
 
 
+/////////Used for an APP thecompany has not part of our implementation////////
 ////////////////////////Parsing and wireless connectivity/////////////////////
 String returntemp = "";               // It used to store return value
 boolean g_autoup = false;
